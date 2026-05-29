@@ -26,6 +26,7 @@ echo.
 :: 디버그 확인 후 --windowed 다시 추가하면 콘솔 창 없어짐
 pyinstaller ^
   --onefile ^
+  --windowed ^
   --name "BA_Tactic_Helper" ^
   --icon NONE ^
   --hidden-import PIL ^

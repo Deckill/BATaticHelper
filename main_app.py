@@ -15,9 +15,11 @@ except ImportError:
     PIL_AVAILABLE = False
 
 from config import MAX_SLOTS, SLOTS_VISIBLE, TRANSLATIONS, STUDENTS_URLS, get_icon_path, ICON_SIZE
+import utils
 from utils import get_registry, set_registry, build_matcher, match_token, tokenize_line, dbg, search_students_by_name
 from data_manager import (
-    load_guides_json, save_guides_json, 
+    load_guides_json, save_guides_json,
+    load_config_json, save_config_json,
     load_custom_dict_local, save_custom_dict_local,
     load_all_students_local, save_all_students_local,
     fetch_students_remote, download_icon
@@ -97,11 +99,11 @@ class AdvancedGuideTeleprompter:
 
     def load_data(self):
         self.config = {"lang":"auto","prev_key":"q","next_key":"e",
-                       "margin_top":2,"hl_color":"#00ff00","font_size":14,"opacity":100,"icon_size":36}
-        val = get_registry("config")
-        if val:
-            try: self.config.update(json.loads(val))
-            except Exception: pass
+                       "margin_top":2,"hl_color":"#00ff00","font_size":14,"opacity":100,"icon_size":36,"debug":False}
+        cfg = load_config_json()
+        if cfg:
+            self.config.update(cfg)
+        # ba_config.json 없으면 기본값 그대로 사용 (초기화 상태)
         
         cd = load_custom_dict_local()
         if cd is not None:
@@ -146,7 +148,7 @@ class AdvancedGuideTeleprompter:
         return cfg_lang if cfg_lang in STUDENTS_URLS else "en"
 
     def save_data(self):
-        set_registry("config", json.dumps(self.config))
+        save_config_json(self.config)
         self._save_custom_dict()
         self.guide_slots[self.current_slot] = self._get_current_raw_text()
         save_guides_json(self.current_slot, self.guide_slots)
@@ -189,24 +191,48 @@ class AdvancedGuideTeleprompter:
             self.all_students_data = {k: v for k, v in all_local.items()
                                       if not k.startswith("_") and isinstance(v, list)}
             self._rebuild_matcher()
-            self._download_missing_icons(all_students_for_icons)
         else:
             dbg("all language data unchanged")
 
-        self.root.after(0, lambda: self._set_status(self.t.get("loading_done","OK")))
+        # 데이터 업데이트 여부와 무관하게 항상 누락 아이콘 체크
+        if all_students_for_icons:
+            self._download_missing_icons(all_students_for_icons)
+        else:
+            self.root.after(0, lambda: self._set_status(self.t.get("loading_done","OK")))
 
     def _download_missing_icons(self, students):
         missing = [s for s in students if not os.path.exists(get_icon_path(s["Id"]))]
-        if not missing: return
-        self.root.after(0, lambda: self._set_status(self.t.get("img_downloading","Downloading icons...")))
+        if not missing:
+            self.root.after(0, lambda: self._set_status(self.t.get("loading_done","OK")))
+            return
+        total = len(missing)
+        self.root.after(0, lambda: self._set_status(
+            self.t.get("img_downloading","Downloading icons...") + f" (0/{total})"))
         ok = 0
-        for s in missing:
+        for i, s in enumerate(missing):
             if download_icon(s["Id"]): ok += 1
-        dbg(f"icon download done: {ok}/{len(missing)}")
+            n = i + 1
+            self.root.after(0, lambda n=n, t=total: self._set_status(
+                self.t.get("img_downloading","Downloading icons...") + f" ({n}/{t})"))
+        dbg(f"icon download done: {ok}/{total}")
         self.root.after(0, lambda: self._set_status(self.t.get("loading_done","OK")))
 
     def _rebuild_matcher(self):
         self.matcher = build_matcher(self.all_students_data, self.custom_dict)
+
+    def apply_debug(self):
+        enabled = bool(self.config.get("debug", False))
+        utils.DEBUG_ENABLED = enabled
+        try:
+            import ctypes
+            if enabled:
+                ctypes.windll.kernel32.AllocConsole()
+                import sys
+                sys.stdout = open("CONOUT$", "w")
+                sys.stderr = open("CONOUT$", "w")
+            else:
+                ctypes.windll.kernel32.FreeConsole()
+        except Exception: pass
 
     def _set_status(self, msg):
         self.root.title(f"{self.t['title']}  [{msg}]")
@@ -578,13 +604,11 @@ class AdvancedGuideTeleprompter:
 
     def go_first(self):
         if self.image_mode:
-            if self._img_widgets: self._img_cur = 0; self._update_image_highlight()
-            return
+            self._img_idx = 0; self._render_image_mode(); return
         self.current_line = 1; self.update_highlight()
 
     def go_last(self):
         if self.image_mode:
-            if self._img_widgets: self._img_cur = len(self._img_widgets)-1; self._update_image_highlight()
-            return
-        self.current_line = self.real_total_lines if self.hotkeys_active else int(self.text_widget.index('end-1c').split('.')[0])
-        self.update_highlight()
+            self._img_idx = len(self._img_blocks) - 1; self._render_image_mode(); return
+        limit = self.real_total_lines if self.hotkeys_active else int(self.text_widget.index('end-1c').split('.')[0])
+        self.current_line = limit; self.update_highlight()

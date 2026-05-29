@@ -1,6 +1,7 @@
 import tkinter as tk
 import tkinter.messagebox as messagebox
 import tkinter.colorchooser as colorchooser
+import webbrowser
 from utils import search_students_by_name, _find_id_by_name
 
 
@@ -8,7 +9,7 @@ def open_settings_window(app):
     if app.hotkeys_active: app.toggle_hotkeys()
     app.temp_config = app.config.copy()
     sw = tk.Toplevel(app.root)
-    sw.title(app.t["s_title"]); sw.geometry("400x440")
+    sw.title(app.t["s_title"]); sw.geometry("400x540")
     sw.configure(bg="#2d2d2d"); sw.attributes('-topmost', True); sw.grab_set()
     bg, fg = "#2d2d2d", "white"
     lnm = {"auto": app.t["auto"], "ko": "한국어", "en": "English", "ja": "日本語", "zh": "中文(简体)"}
@@ -24,8 +25,10 @@ def open_settings_window(app):
             app.config["opacity"]    = int(so.get())
             app.config["hl_color"]   = cv.get()
             app.config["lang"]       = lcm[lv.get()]
+            app.config["debug"]      = bool(dv.get())
             app.root.attributes('-alpha', app.config["opacity"] / 100.0)
             app.update_language(); app.apply_ui_text(); app.update_highlight()
+            app.apply_debug()
             if app.image_mode:
                 if _rerender_job[0]: sw.after_cancel(_rerender_job[0])
                 _rerender_job[0] = sw.after(150, app._render_image_mode)
@@ -65,6 +68,11 @@ def open_settings_window(app):
     so = tk.Scale(sw, from_=20, to=100, orient=tk.HORIZONTAL, bg=bg, fg=fg, highlightthickness=0, command=upv)
     so.set(app.config["opacity"]); so.grid(row=r, column=1, sticky="w"); r += 1
 
+    dv = tk.BooleanVar(value=bool(app.config.get("debug", False)))
+    tk.Checkbutton(sw, text=app.t["s_debug"], variable=dv, command=upv,
+                   bg=bg, fg=fg, selectcolor="#1e1e1e", activebackground=bg,
+                   activeforeground=fg).grid(row=r, column=0, columnspan=2, pady=3, padx=10, sticky="w"); r += 1
+
     tk.Label(sw, text=app.t["s_lang"], bg=bg, fg=fg).grid(row=r, column=0, pady=5, padx=10, sticky="e")
     lv = tk.StringVar(value=lnm.get(app.config["lang"], "English"))
     om = tk.OptionMenu(sw, lv, *lnm.values(), command=upv)
@@ -82,6 +90,7 @@ def open_settings_window(app):
         app.config = app.temp_config.copy()
         app.root.attributes('-alpha', app.config["opacity"] / 100.0)
         app.update_language(); app.apply_ui_text(); app.update_highlight()
+        app.apply_debug()
         if app.image_mode: app._render_image_mode()
         sw.destroy()
 
@@ -89,21 +98,126 @@ def open_settings_window(app):
     bf = tk.Frame(sw, bg=bg); bf.grid(row=r, column=0, columnspan=2, pady=10)
     tk.Button(bf, text=app.t["s_save"],   command=save,   bg="#4CAF50", fg="white", width=10).pack(side=tk.LEFT,  padx=10)
     tk.Button(bf, text=app.t["s_cancel"], command=cancel, bg="#f44336", fg="white", width=10).pack(side=tk.RIGHT, padx=10)
+    r += 1
+
+    # -- 하단 정보 --
+    info = tk.Frame(sw, bg="#222222")
+    info.grid(row=r, column=0, columnspan=2, sticky="ew")
+
+    credit_row = tk.Frame(info, bg="#222222")
+    credit_row.pack(pady=(6, 2))
+
+    lnk_license = tk.Label(credit_row, text="License / Credits", bg="#222222", fg="#7799bb",
+                            font=("Malgun Gothic", 8, "underline"), cursor="hand2")
+    lnk_license.pack(side=tk.LEFT, padx=6)
+    lnk_license.bind("<Button-1>", lambda e: open_license_window(sw))
+
+    tk.Label(credit_row, text="|", bg="#222222", fg="#555555", font=("Malgun Gothic", 8)).pack(side=tk.LEFT)
+
+    lnk_author = tk.Label(credit_row, text="Deckill", bg="#222222", fg="#7799bb",
+                           font=("Malgun Gothic", 8, "underline"), cursor="hand2")
+    lnk_author.pack(side=tk.LEFT, padx=6)
+    lnk_author.bind("<Button-1>", lambda e: webbrowser.open("https://www.youtube.com/@ButterDeckill"))
+
+    # notice = tk.Label(info,
+    #                   text="Data: SchaleDB  |  Unofficial non-commercial fan tool for Blue Archive.\n"
+    #                        "Copyright belongs to NEXON Korea Corp. & NEXON GAMES Co., Ltd. & YOSTAR, Inc.",
+    #                   bg="#222222", fg="#666666", font=("Malgun Gothic", 7), justify="center", wraplength=380)
+    # notice.pack(pady=(0, 6), padx=6)
+
+
+def open_license_window(parent=None):
+    lw = tk.Toplevel(parent)
+    lw.title("License / Credits")
+    lw.geometry("520x520")
+    lw.configure(bg="#1e1e1e")
+    lw.attributes('-topmost', True)
+    if parent: lw.grab_set()
+
+    bg       = "#1e1e1e"
+    fg       = "#cccccc"
+    link_fg  = "#7799bb"
+    head_fg  = "#ffffff"
+    font_h   = ("Malgun Gothic", 11, "bold")
+    font_b   = ("Malgun Gothic",  9)
+    font_lnk = ("Malgun Gothic",  9, "underline")
+
+    outer = tk.Frame(lw, bg=bg)
+    outer.pack(fill=tk.BOTH, expand=True)
+    canvas = tk.Canvas(outer, bg=bg, highlightthickness=0)
+    sb = tk.Scrollbar(outer, orient=tk.VERTICAL, command=canvas.yview)
+    canvas.configure(yscrollcommand=sb.set)
+    sb.pack(side=tk.RIGHT, fill=tk.Y)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    inner = tk.Frame(canvas, bg=bg)
+    wid = canvas.create_window((0, 0), window=inner, anchor="nw")
+    canvas.bind("<Configure>", lambda e: canvas.itemconfig(wid, width=e.width))
+    inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+    inner.bind("<MouseWheel>",  lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+    def section(title):
+        tk.Label(inner, text=title, bg=bg, fg=head_fg, font=font_h,
+                 anchor="w").pack(fill=tk.X, padx=16, pady=(14, 2))
+        tk.Frame(inner, bg="#444444", height=1).pack(fill=tk.X, padx=16)
+
+    def body(text):
+        tk.Label(inner, text=text, bg=bg, fg=fg, font=font_b,
+                 anchor="w", justify="left", wraplength=460).pack(fill=tk.X, padx=24, pady=2)
+
+    def linkrow(label, url, note=""):
+        row = tk.Frame(inner, bg=bg)
+        row.pack(fill=tk.X, padx=24, pady=1)
+        lbl = tk.Label(row, text=label, bg=bg, fg=link_fg, font=font_lnk, cursor="hand2")
+        lbl.pack(side=tk.LEFT)
+        lbl.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+        if note:
+            tk.Label(row, text="  " + note, bg=bg, fg=fg, font=font_b).pack(side=tk.LEFT)
+
+    # 데이터 출처
+    section("데이터 출처 / Data Sources")
+    linkrow("SchaleDB", "https://schaledb.com/", "— 학생 이미지")
+
+    # 사용 라이브러리
+    section("사용 라이브러리 / Libraries Used")
+    linkrow("Pillow", "https://github.com/python-pillow/Pillow",
+            "— HPND License  |  Image processing")
+    linkrow("keyboard", "https://github.com/boppreh/keyboard",
+            "— MIT License  |  Global hotkey support")
+    linkrow("mouse", "https://github.com/boppreh/mouse",
+            "— MIT License  |  Mouse event detection")
+    linkrow("PyInstaller", "https://github.com/pyinstaller/pyinstaller",
+            "— GPL-2.0 + bootloader exception  |  EXE packaging")
+
+    # 면책 조항
+    section("면책 조항 / Disclaimer")
+    body("This is an unofficial and non-commercial fan tool for Blue Archive.")
+    body("All copyright of Blue Archive belongs to:")
+
+    row = tk.Frame(inner, bg=bg)
+    row.pack(fill=tk.X, padx=24, pady=(2, 8))
+    for label, url in [
+        ("NEXON Korea Corp.", "https://www.nexon.com/"),
+        ("NEXON GAMES Co., Ltd.", "https://www.nexongames.co.kr/"),
+        ("YOSTAR, Inc.", "https://www.yo-star.com/"),
+    ]:
+        lbl = tk.Label(row, text=label, bg=bg, fg=link_fg, font=font_lnk, cursor="hand2")
+        lbl.pack(side=tk.LEFT, padx=(0, 10))
+        lbl.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+
+    tk.Frame(inner, bg="#333333", height=1).pack(fill=tk.X, padx=16, pady=(8, 4))
+    tk.Button(inner, text="닫기", command=lw.destroy,
+              bg="#555555", fg="white", font=font_b, width=10).pack(pady=(4, 14))
 
 
 def open_custom_dict_window(app, parent=None):
-    """
-    통상 명칭 사전 관리 창.
-    타겟 학생 입력 시 모든 언어 학생 데이터에서 실시간 검색 -> 드롭다운 추천.
-    커스텀 사전 체인 지원: 입력 이름이 기존 커스텀 사전 value이면 체인 따라가 최종 Name 저장.
-    """
     cw = tk.Toplevel(parent or app.root)
     cw.title(app.t["cd_title"]); cw.geometry("460x480")
     cw.configure(bg="#2d2d2d"); cw.attributes('-topmost', True)
     if parent: cw.grab_set()
     bg, fg = "#2d2d2d", "white"
 
-    # -- 입력 영역 --
     inp = tk.Frame(cw, bg=bg)
     inp.pack(fill=tk.X, padx=10, pady=(10, 0))
 
@@ -121,7 +235,6 @@ def open_custom_dict_window(app, parent=None):
                           font=("Malgun Gothic", 9), anchor="w")
     status_lbl.grid(row=2, column=0, columnspan=3, sticky="w", pady=(3, 0))
 
-    # -- 자동완성 드롭다운 --
     ac_frame = tk.Frame(cw, bg="#1a1a2e", relief="solid", borderwidth=1)
     ac_lb = tk.Listbox(ac_frame, bg="#1a1a2e", fg="white", selectbackground="#446688",
                        font=("Malgun Gothic", 10), height=6, activestyle="none",
@@ -158,7 +271,6 @@ def open_custom_dict_window(app, parent=None):
             _hide_dropdown()
 
     def _resolve_chain(raw):
-        """커스텀 사전 체인 따라가 최종 Name 반환 (순환 방지)"""
         visited, cur = set(), raw
         while cur in app.custom_dict and cur not in visited:
             visited.add(cur)
@@ -219,7 +331,6 @@ def open_custom_dict_window(app, parent=None):
     es.bind("<FocusOut>",  lambda e: cw.after(200, _hide_dropdown))
     es.bind("<FocusIn>",   lambda e: _do_search())
 
-    # -- 등록 목록 --
     lf = tk.Frame(cw, bg=bg)
     lf.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 0))
     sb = tk.Scrollbar(lf); sb.pack(side=tk.RIGHT, fill=tk.Y)

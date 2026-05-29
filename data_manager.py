@@ -1,8 +1,25 @@
 import json
 import os
 from urllib.request import urlopen, Request
-from config import STUDENTS_URLS, get_students_path, get_custom_dict_path, get_save_path, get_icon_path, ICON_URL_TEMPLATE, MAX_SLOTS
+from config import STUDENTS_URLS, get_students_path, get_custom_dict_path, get_save_path, get_icon_path, get_config_path, ICON_URL_TEMPLATE, MAX_SLOTS
 from utils import dbg
+
+def load_config_json():
+    path = get_config_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            dbg(f"load_config_json error: {e}")
+    return None
+
+def save_config_json(config):
+    try:
+        with open(get_config_path(), "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        dbg(f"save_config_json error: {e}")
 
 def load_guides_json(current_slot, guide_slots):
     try:
@@ -51,7 +68,7 @@ def load_all_students_local():
         with open(path, "r", encoding="utf-8") as f:
             all_data = json.load(f)
         if "students" in all_data and isinstance(all_data["students"], list):
-            dbg("migrating old ba_students.json format → multi-lang")
+            dbg("migrating old ba_students.json format to multi-lang")
             all_data = {"ko": all_data["students"]}
         return all_data
     except Exception as e:

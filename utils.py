@@ -2,8 +2,11 @@ import winreg
 import re
 from config import REG_PATH
 
+DEBUG_ENABLED = False
+
 def dbg(msg):
-    print(f"[DBG] {msg}", flush=True)
+    if DEBUG_ENABLED:
+        print(f"[DBG] {msg}", flush=True)
 
 # -- 레지스트리 --
 def set_registry(name, value):
@@ -48,7 +51,6 @@ def _split_normal(text):
 # -- 학생 검색/매처 --
 
 def _find_id_by_name(name, langs_data):
-    """모든 언어에서 Name == name 인 학생의 Id 반환"""
     for students in langs_data.values():
         for s in students:
             if s.get("Name") == name:
@@ -57,13 +59,6 @@ def _find_id_by_name(name, langs_data):
 
 
 def build_matcher(all_students_by_lang, custom_dict):
-    """
-    all_students_by_lang: {"ko": [...], "en": [...], ...}
-    또는 하위 호환용 list [...] (단일 언어)
-
-    모든 언어의 학생 데이터를 통합해 매처를 생성.
-    커스텀 사전 체인도 해석: 드레스히나->드히나->히나(드레스) 순으로 추적.
-    """
     if isinstance(all_students_by_lang, list):
         langs_data = {"_compat": all_students_by_lang}
     else:
@@ -77,14 +72,12 @@ def build_matcher(all_students_by_lang, custom_dict):
 
     entries = []
 
-    # 1) 커스텀 사전 (priority 0, 최우선)
     for alias, raw_target in custom_dict.items():
         final_name = resolve_name(raw_target)
         sid = _find_id_by_name(final_name, langs_data)
         if sid is not None:
             entries.append((alias, sid, 0))
 
-    # 2) 각 언어별 SearchTags (priority 1) + Name (priority 2)
     for students in langs_data.values():
         for s in students:
             sid  = s.get("Id")
@@ -95,7 +88,6 @@ def build_matcher(all_students_by_lang, custom_dict):
                 if tag: entries.append((tag, sid, 1))
             if name: entries.append((name, sid, 2))
 
-    # 중복 제거: 같은 키워드면 priority 낮은 쪽(숫자 작은 쪽) 유지
     seen = {}
     for kw, sid, pri in entries:
         if kw not in seen or pri < seen[kw][1]:
@@ -109,10 +101,6 @@ def build_matcher(all_students_by_lang, custom_dict):
 
 
 def search_students_by_name(query, all_students_by_lang, max_results=8):
-    """
-    query로 모든 언어 학생 Name/SearchTags 검색, 중복 Id 제거 후 반환.
-    반환: [{"Id": ..., "Name": ..., "display": ..., "lang": ...}, ...]
-    """
     query_lower = query.lower()
     seen_ids = set()
     results = []
