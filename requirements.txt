@@ -1,0 +1,5 @@
+keyboard
+mouse
+Pillow
+requests
+pyinstaller
