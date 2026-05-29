@@ -99,7 +99,7 @@ class AdvancedGuideTeleprompter:
 
     def load_data(self):
         self.config = {"lang":"auto","prev_key":"q","next_key":"e",
-                       "margin_top":2,"hl_color":"#00ff00","font_size":14,"opacity":100,"icon_size":36,"debug":False}
+                       "margin_top":2,"hl_color":"#00ff00","fg_color":"#ffffff","bg_color":"#1e1e1e","font_size":14,"opacity":100,"icon_size":36,"icon_pad":4,"debug":False}
         cfg = load_config_json()
         if cfg:
             self.config.update(cfg)
@@ -273,7 +273,7 @@ class AdvancedGuideTeleprompter:
         self.slot_btn_frame.bind("<Configure>", self._on_slot_frame_resize)
 
         self.text_widget = tk.Text(
-            self.root, font=self.custom_font, bg="#1e1e1e", fg="#555555", insertbackground="white",
+            self.root, font=self.custom_font, bg="#1e1e1e", fg="#ffffff", insertbackground="white",
             borderwidth=0, highlightthickness=0, spacing1=5, spacing3=5, wrap=tk.WORD,
         )
         self.text_widget.pack(expand=True, fill=tk.BOTH, padx=10, pady=8)
@@ -353,7 +353,10 @@ class AdvancedGuideTeleprompter:
         self.custom_font.configure(size=self.config["font_size"])
         self.custom_hl_font.configure(size=self.config["font_size"]+2)
         self.text_widget.tag_configure("highlight", foreground=self.config["hl_color"], font=self.custom_hl_font, justify="left")
-        self.text_widget.tag_configure("normal", font=self.custom_font, justify="left")
+        fg_c = self.config.get("fg_color", "#ffffff")
+        bg_c = self.config.get("bg_color", "#1e1e1e")
+        self.text_widget.config(fg=fg_c, bg=bg_c)
+        self.text_widget.tag_configure("normal", foreground=fg_c, font=self.custom_font, justify="left")
         self._refresh_slot_buttons()
 
     def open_settings(self):
@@ -375,11 +378,16 @@ class AdvancedGuideTeleprompter:
             else:               self.auto_tracker.stop_hooks()
 
     def _render_image_mode(self, capture_text=False):
+        current_size = self._icon_size()
+        if getattr(self, '_cached_icon_size', None) != current_size:
+            self._photo_cache = {}
+            self._cached_icon_size = current_size
+
         if capture_text:
             self._raw_text = self.text_widget.get("1.0","end-1c")
         self._img_widgets = []
         self._img_cur     = 0
-        self._photo_cache = {}
+        self._pending_icons = {}
         self.text_widget.config(state=tk.NORMAL)
         self.text_widget.delete("1.0", tk.END)
         lines = self._raw_text.split("\n")
@@ -404,44 +412,73 @@ class AdvancedGuideTeleprompter:
             self.text_widget.insert(tk.END, token, "normal"); return
         prefix, sid, suffix = m
         if prefix: self.text_widget.insert(tk.END, prefix, "normal")
-        ph = tk.Label(self.text_widget, text="[?]", bg="#1e1e1e", fg="#aaaaaa", font=self.custom_font, cursor="arrow")
+        
+        pad = self.config.get("icon_pad", 4)
+        bg_c = self.config.get("bg_color","#1e1e1e")
+        
+        ph = tk.Frame(self.text_widget, bg=bg_c, cursor="arrow", padx=pad, pady=pad)
+        lbl = tk.Label(ph, text="[?]", bg=bg_c, fg="#aaaaaa", font=self.custom_font)
+        lbl.pack()
+        ph.lbl = lbl
+        
         tw = self.text_widget
-        ph.bind("<MouseWheel>",       lambda e: tw.event_generate("<MouseWheel>",       delta=e.delta))
-        ph.bind("<Button-4>",         lambda e: tw.event_generate("<Button-4>"))
-        ph.bind("<Button-5>",         lambda e: tw.event_generate("<Button-5>"))
+        for w in (ph, lbl):
+            w.bind("<MouseWheel>",       lambda e: tw.event_generate("<MouseWheel>",       delta=e.delta))
+            w.bind("<Button-4>",         lambda e: tw.event_generate("<Button-4>"))
+            w.bind("<Button-5>",         lambda e: tw.event_generate("<Button-5>"))
+            
         self.text_widget.window_create(tk.END, window=ph)
         self._img_widgets.append(ph)
-        local_path = get_icon_path(sid)
-        if os.path.exists(local_path):
-            threading.Thread(target=self._load_icon_local, args=(sid, ph, local_path), daemon=True).start()
+        
+        if sid in getattr(self, '_photo_cache', {}):
+            self._place_icon(sid, self._photo_cache[sid], ph)
         else:
-            threading.Thread(target=self._load_icon_remote, args=(sid, ph), daemon=True).start()
+            if not hasattr(self, '_pending_icons'): self._pending_icons = {}
+            if sid in self._pending_icons:
+                self._pending_icons[sid].append(ph)
+            else:
+                self._pending_icons[sid] = [ph]
+                local_path = get_icon_path(sid)
+                if os.path.exists(local_path):
+                    threading.Thread(target=self._load_icon_local, args=(sid, local_path), daemon=True).start()
+                else:
+                    threading.Thread(target=self._load_icon_remote, args=(sid,), daemon=True).start()
         if suffix: self._insert_token_with_images(suffix)
 
     def _icon_size(self):
         s = self.config.get("icon_size", 36)
         return (s, s)
 
-    def _load_icon_local(self, student_id, label, path):
+    def _load_icon_local(self, student_id, path):
         try:
             img   = Image.open(path).convert("RGBA").resize(self._icon_size(), Image.LANCZOS)
-            photo = ImageTk.PhotoImage(img)
-            self.root.after(0, lambda: self._place_icon(student_id, photo, label))
+            self.root.after(0, lambda: self._on_icon_loaded(student_id, img))
         except Exception:
-            threading.Thread(target=self._load_icon_remote, args=(student_id, label), daemon=True).start()
+            threading.Thread(target=self._load_icon_remote, args=(student_id,), daemon=True).start()
 
-    def _load_icon_remote(self, student_id, label):
+    def _load_icon_remote(self, student_id):
         try:
             data = download_icon(student_id)
             if data:
                 img   = Image.open(io.BytesIO(data)).convert("RGBA").resize(self._icon_size(), Image.LANCZOS)
-                photo = ImageTk.PhotoImage(img)
-                self.root.after(0, lambda: self._place_icon(student_id, photo, label))
+                self.root.after(0, lambda: self._on_icon_loaded(student_id, img))
         except Exception: pass
 
+    def _on_icon_loaded(self, student_id, img):
+        if not hasattr(self, '_photo_cache'): self._photo_cache = {}
+        if student_id not in self._photo_cache:
+            self._photo_cache[student_id] = ImageTk.PhotoImage(img)
+        photo = self._photo_cache[student_id]
+        if hasattr(self, '_pending_icons') and student_id in self._pending_icons:
+            for label in self._pending_icons.pop(student_id, []):
+                self._place_icon(student_id, photo, label)
+
     def _place_icon(self, student_id, photo, label):
-        self._photo_cache[student_id] = photo
-        try: label.config(image=photo, text="", bg="#1e1e1e"); label.image = photo
+        try:
+            pad = self.config.get("icon_pad", 4)
+            label.config(padx=pad, pady=pad, bg=self.config.get("bg_color","#1e1e1e"))
+            label.lbl.config(image=photo, text="", bg=self.config.get("bg_color","#1e1e1e"))
+            label.lbl.image = photo
         except Exception: pass
         self._update_image_highlight()
 
@@ -450,7 +487,7 @@ class AdvancedGuideTeleprompter:
         self.text_widget.config(state=tk.NORMAL)
         self.text_widget.delete("1.0", tk.END)
         self.text_widget.insert(tk.END, raw if raw.strip() else self.t["placeholder"], "normal")
-        self._img_widgets = []; self._img_cur = 0; self._photo_cache = {}
+        self._img_widgets = []; self._img_cur = 0
         if self.hotkeys_active:
             self.real_total_lines = int(self.text_widget.index('end-1c').split('.')[0])
             self.text_widget.config(state=tk.DISABLED)
@@ -462,8 +499,13 @@ class AdvancedGuideTeleprompter:
         hl = "#ff3333" if armed else self.config["hl_color"]
         for i, w in enumerate(self._img_widgets):
             try:
-                if i == self._img_cur: w.config(bg=hl, relief="solid", borderwidth=2)
-                else:                  w.config(bg="#1e1e1e", relief="flat", borderwidth=0)
+                if i == self._img_cur: 
+                    w.config(bg=hl, relief="solid", borderwidth=2)
+                    w.lbl.config(bg=hl)
+                else:                  
+                    bg_c = self.config.get("bg_color","#1e1e1e")
+                    w.config(bg=bg_c, relief="flat", borderwidth=0)
+                    w.lbl.config(bg=bg_c)
             except Exception: pass
         if not armed:
             self.root.after(1, self._scroll_to_current_img)

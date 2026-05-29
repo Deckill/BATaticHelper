@@ -22,8 +22,11 @@ def open_settings_window(app):
             app.config["margin_top"] = int(em.get() or app.temp_config["margin_top"])
             app.config["font_size"]  = int(es.get() or app.temp_config["font_size"])
             app.config["icon_size"]  = int(si.get())
+            app.config["icon_pad"]   = int(sp.get())
             app.config["opacity"]    = int(so.get())
             app.config["hl_color"]   = cv.get()
+            app.config["fg_color"]   = fgv.get()
+            app.config["bg_color"]   = bgv.get()
             app.config["lang"]       = lcm[lv.get()]
             app.config["debug"]      = bool(dv.get())
             app.root.attributes('-alpha', app.config["opacity"] / 100.0)
@@ -56,6 +59,10 @@ def open_settings_window(app):
     si = tk.Scale(sw, from_=20, to=80, orient=tk.HORIZONTAL, bg=bg, fg=fg, highlightthickness=0, command=upv)
     si.set(app.config.get("icon_size", 36)); si.grid(row=r, column=1, sticky="w"); r += 1
 
+    tk.Label(sw, text=app.t.get("s_icon_pad", "Icon Padding:"), bg=bg, fg=fg).grid(row=r, column=0, pady=5, padx=10, sticky="e")
+    sp = tk.Scale(sw, from_=0, to=20, orient=tk.HORIZONTAL, bg=bg, fg=fg, highlightthickness=0, command=upv)
+    sp.set(app.config.get("icon_pad", 4)); sp.grid(row=r, column=1, sticky="w"); r += 1
+
     tk.Label(sw, text=app.t["s_color"], bg=bg, fg=fg).grid(row=r, column=0, pady=5, padx=10, sticky="e")
     cv = tk.StringVar(value=app.config["hl_color"])
     def pick():
@@ -63,6 +70,22 @@ def open_settings_window(app):
         if c: cv.set(c); bc.config(bg=c); upv()
     bc = tk.Button(sw, text="...", bg=app.config["hl_color"], command=pick, width=10)
     bc.grid(row=r, column=1); r += 1
+
+    tk.Label(sw, text=app.t.get("s_fg_color", "Text Color:"), bg=bg, fg=fg).grid(row=r, column=0, pady=5, padx=10, sticky="e")
+    fgv = tk.StringVar(value=app.config.get("fg_color", "#ffffff"))
+    def pick_fg():
+        c = colorchooser.askcolor(title="Text Color", initialcolor=app.config.get("fg_color", "#ffffff"))[1]
+        if c: fgv.set(c); bfg.config(bg=c); upv()
+    bfg = tk.Button(sw, text="...", bg=app.config.get("fg_color", "#ffffff"), command=pick_fg, width=10)
+    bfg.grid(row=r, column=1); r += 1
+
+    tk.Label(sw, text=app.t.get("s_bg_color", "Background Color:"), bg=bg, fg=fg).grid(row=r, column=0, pady=5, padx=10, sticky="e")
+    bgv = tk.StringVar(value=app.config.get("bg_color", "#1e1e1e"))
+    def pick_bg():
+        c = colorchooser.askcolor(title="Background Color", initialcolor=app.config.get("bg_color", "#1e1e1e"))[1]
+        if c: bgv.set(c); bbg.config(bg=c); upv()
+    bbg = tk.Button(sw, text="...", bg=app.config.get("bg_color", "#1e1e1e"), command=pick_bg, width=10)
+    bbg.grid(row=r, column=1); r += 1
 
     tk.Label(sw, text=app.t["s_opacity"], bg=bg, fg=fg).grid(row=r, column=0, pady=5, padx=10, sticky="e")
     so = tk.Scale(sw, from_=20, to=100, orient=tk.HORIZONTAL, bg=bg, fg=fg, highlightthickness=0, command=upv)
@@ -89,6 +112,9 @@ def open_settings_window(app):
     def cancel():
         app.config = app.temp_config.copy()
         app.root.attributes('-alpha', app.config["opacity"] / 100.0)
+        cv.set(app.config["hl_color"]); bc.config(bg=app.config["hl_color"])
+        fgv.set(app.config.get("fg_color", "#ffffff")); bfg.config(bg=app.config.get("fg_color", "#ffffff"))
+        bgv.set(app.config.get("bg_color", "#1e1e1e")); bbg.config(bg=app.config.get("bg_color", "#1e1e1e"))
         app.update_language(); app.apply_ui_text(); app.update_highlight()
         app.apply_debug()
         if app.image_mode: app._render_image_mode()

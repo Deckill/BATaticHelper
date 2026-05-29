@@ -104,6 +104,9 @@ class AutoTracker:
         if not self.should_run_auto_cb(): return
 
         btn = event.event_type
+        # double-click의 두 번째 down은 "double"로 들어오므로 down으로 통일
+        if btn == "double":
+            btn = "down"
 
         with self._auto_lock:
             state = self._auto_state
