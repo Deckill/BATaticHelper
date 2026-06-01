@@ -28,6 +28,9 @@ def get_students_path():
 def get_custom_dict_path():
     return os.path.join(get_base_dir(), "ba_custom_dict.json")
 
+def get_custom_skills_path():
+    return os.path.join(get_base_dir(), "ba_custom_skills.json")
+
 def get_config_path():
     return os.path.join(get_base_dir(), "ba_config.json")
 
@@ -46,9 +49,10 @@ TRANSLATIONS = {
         "img_toggle_off": "🖼 이미지 OFF", "img_toggle_on": "🖼 이미지 ON",
         "placeholder": "여기에 공략을 복사해서 붙여넣으세요.\n(Ctrl+V)\n\n클릭하면 해당 순서로 이동합니다.",
         "error_title": "오류", "error_msg": "잘못된 단축키 형식입니다.",
-        "s_title": "설정", "s_prev": "이전 단축키:", "s_next": "다음 단축키:",
+        "s_title": "설정",
         "s_margin": "상단 고정 (몇 번째 줄):", "s_color": "하이라이트 색상:",
         "s_fg_color": "글자 색상:", "s_bg_color": "배경 색상:", "s_size": "글자 크기:", "s_icon_size": "이미지 크기:", "s_icon_pad": "이미지 패딩:", "s_lang": "언어 (Language):", "s_opacity": "배경 투명도 (%):", "s_debug": "디버그 콘솔 표시",
+        "s_hotkeys": "단축키 설정 열기...", "hk_title": "단축키 설정", "hk_prev": "이전 줄 이동", "hk_next": "다음 줄 이동", "hk_ex": "EX 스킬", "hk_support": "지원 스킬", "hk_custom_add": "+ 커스텀 추가", "hk_waiting": "키보드 누르세요... (Esc: 취소)",
         "s_save": "저장", "s_cancel": "취소", "auto": "자동 감지 (Auto)",
         "s_custom_dict": "통상 명칭 관리",
         "cd_title": "통상 명칭 사전 관리",
@@ -67,9 +71,10 @@ TRANSLATIONS = {
         "img_toggle_off": "🖼 Image OFF", "img_toggle_on": "🖼 Image ON",
         "placeholder": "Paste your guide here.\n(Ctrl+V)\n\nClick to move.",
         "error_title": "Error", "error_msg": "Invalid hotkey format.",
-        "s_title": "Settings", "s_prev": "Prev Hotkey:", "s_next": "Next Hotkey:",
+        "s_title": "Settings",
         "s_margin": "Top Margin (Lines):", "s_color": "Highlight Color:",
         "s_fg_color": "Text Color:", "s_bg_color": "Background Color:", "s_size": "Font Size:", "s_icon_size": "Icon Size:", "s_icon_pad": "Icon Padding:", "s_lang": "Language:", "s_opacity": "Opacity (%):", "s_debug": "Show Debug Console",
+        "s_hotkeys": "Open Hotkeys Settings...", "hk_title": "Hotkey Settings", "hk_prev": "Previous Line", "hk_next": "Next Line", "hk_ex": "EX Skill", "hk_support": "Support Skill", "hk_custom_add": "+ Add Custom", "hk_waiting": "Press any key... (Esc: Cancel)",
         "s_save": "Save", "s_cancel": "Cancel", "auto": "Auto Detect",
         "s_custom_dict": "Alias Manager",
         "cd_title": "Custom Alias Manager",
@@ -88,9 +93,10 @@ TRANSLATIONS = {
         "img_toggle_off": "🖼 画像 OFF", "img_toggle_on": "🖼 画像 ON",
         "placeholder": "攻略をここに貼り付けてください。\n(Ctrl+V)\n\nクリックで移動します。",
         "error_title": "エラー", "error_msg": "無効なホットキー形式です。",
-        "s_title": "設定", "s_prev": "前へのホットキー:", "s_next": "次へのホットキー:",
+        "s_title": "設定",
         "s_margin": "上部余白 (行数):", "s_color": "ハイライト色:",
         "s_fg_color": "文字色:", "s_bg_color": "背景色:", "s_size": "フォントサイズ:", "s_icon_size": "アイコンサイズ:", "s_icon_pad": "アイコン余白:", "s_lang": "言語 (Language):", "s_opacity": "背景透明度 (%):", "s_debug": "デバッグコンソール表示",
+        "s_hotkeys": "ホットキー設定を開く...", "hk_title": "ホットキー設定", "hk_prev": "前の行へ", "hk_next": "次の行へ", "hk_ex": "EX スキル", "hk_support": "支援スキル", "hk_custom_add": "+ カスタム追加", "hk_waiting": "キーを入力... (Esc: キャンセル)",
         "s_save": "保存", "s_cancel": "キャンセル", "auto": "自動検出 (Auto)",
         "s_custom_dict": "通称管理",
         "cd_title": "通称辞書管理",
@@ -109,9 +115,10 @@ TRANSLATIONS = {
         "img_toggle_off": "🖼 图片 OFF", "img_toggle_on": "🖼 图片 ON",
         "placeholder": "请将攻略粘贴到此处。\n(Ctrl+V)\n\n点击可跳转到对应位置。",
         "error_title": "错误", "error_msg": "快捷键格式无效。",
-        "s_title": "设置", "s_prev": "上一个快捷键:", "s_next": "下一个快捷键:",
+        "s_title": "设置",
         "s_margin": "顶部边距 (行数):", "s_color": "高亮颜色:",
         "s_fg_color": "文字颜色:", "s_bg_color": "背景颜色:", "s_size": "字体大小:", "s_icon_size": "图标大小:", "s_icon_pad": "图标内边距:", "s_lang": "语言 (Language):", "s_opacity": "背景透明度 (%):", "s_debug": "显示调试控制台",
+        "s_hotkeys": "打开快捷键设置...", "hk_title": "快捷键设置", "hk_prev": "上一行", "hk_next": "下一行", "hk_ex": "EX 技能", "hk_support": "支援技能", "hk_custom_add": "+ 添加自定义", "hk_waiting": "请按下任意键... (Esc: 取消)",
         "s_save": "保存", "s_cancel": "取消", "auto": "自动检测 (Auto)",
         "s_custom_dict": "别名管理",
         "cd_title": "别名词典管理",

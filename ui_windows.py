@@ -2,15 +2,29 @@ import tkinter as tk
 import tkinter.messagebox as messagebox
 import tkinter.colorchooser as colorchooser
 import webbrowser
+import keyboard
 from utils import search_students_by_name, _find_id_by_name
+
+def position_window_relative(parent, child, offset_x=-30, offset_y=30):
+    parent.update_idletasks()
+    x = parent.winfo_rootx() + offset_x
+    y = parent.winfo_rooty() + offset_y
+    
+    import re
+    geom = child.geometry()
+    m = re.match(r"^(\d+x\d+)", geom)
+    size = m.group(1) if m else f"{child.winfo_reqwidth()}x{child.winfo_reqheight()}"
+    
+    child.geometry(f"{size}+{x}+{y}")
 
 
 def open_settings_window(app):
     if app.hotkeys_active: app.toggle_hotkeys()
     app.temp_config = app.config.copy()
     sw = tk.Toplevel(app.root)
-    sw.title(app.t["s_title"]); sw.geometry("400x540")
+    sw.title(app.t["s_title"]); sw.geometry("400x600")
     sw.configure(bg="#2d2d2d"); sw.attributes('-topmost', True); sw.grab_set()
+    position_window_relative(app.root, sw)
     bg, fg = "#2d2d2d", "white"
     lnm = {"auto": app.t["auto"], "ko": "한국어", "en": "English", "ja": "日本語", "zh": "中文(简体)"}
     lcm = {v: k for k, v in lnm.items()}
@@ -38,12 +52,9 @@ def open_settings_window(app):
         except ValueError: pass
 
     r = 0
-    for lbl, key in [(app.t["s_prev"], "prev_key"), (app.t["s_next"], "next_key")]:
-        tk.Label(sw, text=lbl, bg=bg, fg=fg).grid(row=r, column=0, pady=5, padx=10, sticky="e")
-        e = tk.Entry(sw, width=15); e.insert(0, app.config[key])
-        e.grid(row=r, column=1); r += 1
-        if key == "prev_key": ep = e
-        else:                  en = e
+    tk.Button(sw, text=app.t.get("s_hotkeys", "단축키 설정 열기..."), bg="#557799", fg="white",
+              command=lambda: open_hotkeys_window(app, sw)
+              ).grid(row=r, column=0, columnspan=2, pady=8, padx=10, sticky="ew"); r += 1
 
     tk.Label(sw, text=app.t["s_margin"], bg=bg, fg=fg).grid(row=r, column=0, pady=5, padx=10, sticky="e")
     em = tk.Spinbox(sw, from_=0, to=10, width=13, command=upv)
@@ -103,10 +114,13 @@ def open_settings_window(app):
 
     tk.Button(sw, text=app.t["s_custom_dict"], bg="#446688", fg="white",
               command=lambda: open_custom_dict_window(app, sw)
-              ).grid(row=r, column=0, columnspan=2, pady=8, padx=10, sticky="ew"); r += 1
+              ).grid(row=r, column=0, columnspan=2, pady=(8,4), padx=10, sticky="ew"); r += 1
+
+    tk.Button(sw, text="커스텀 스킬 관리", bg="#446688", fg="white",
+              command=lambda: open_custom_skill_window(app, sw)
+              ).grid(row=r, column=0, columnspan=2, pady=(0,8), padx=10, sticky="ew"); r += 1
 
     def save():
-        app.config["prev_key"] = ep.get(); app.config["next_key"] = en.get()
         app.save_data(); sw.destroy()
 
     def cancel():
@@ -242,6 +256,7 @@ def open_custom_dict_window(app, parent=None):
     cw.title(app.t["cd_title"]); cw.geometry("460x480")
     cw.configure(bg="#2d2d2d"); cw.attributes('-topmost', True)
     if parent: cw.grab_set()
+    position_window_relative(parent if parent else app.root, cw)
     bg, fg = "#2d2d2d", "white"
 
     inp = tk.Frame(cw, bg=bg)
@@ -395,3 +410,222 @@ def open_custom_dict_window(app, parent=None):
     tk.Button(bf, text=app.t["cd_delete"], command=delete,     bg="#f44336", fg="white", width=12).pack(side=tk.LEFT,  padx=4)
     tk.Button(bf, text=app.t["cd_close"],  command=cw.destroy, bg="#555555", fg="white", width=8 ).pack(side=tk.RIGHT, padx=4)
     ref()
+
+def open_hotkeys_window(app, parent=None):
+    hw = tk.Toplevel(parent or app.root)
+    hw.title(app.t.get("hk_title", "Hotkey Settings"))
+    hw.geometry("420x560")
+    hw.configure(bg="#2d2d2d")
+    hw.attributes('-topmost', True)
+    if parent: hw.grab_set()
+    position_window_relative(parent if parent else app.root, hw)
+
+    bg, fg = "#2d2d2d", "white"
+
+    canvas = tk.Canvas(hw, bg=bg, highlightthickness=0)
+    vbar = tk.Scrollbar(hw, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vbar.set)
+    sf = tk.Frame(canvas, bg=bg)
+    canvas.create_window((0, 0), window=sf, anchor="nw", width=380)
+
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+    vbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    def on_frame_configure(event):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+    sf.bind("<Configure>", on_frame_configure)
+
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+    def _bind_wheel(w):
+        w.bind("<MouseWheel>", _on_mousewheel)
+        for c in w.winfo_children():
+            _bind_wheel(c)
+            
+    hw.bind("<MouseWheel>", _on_mousewheel)
+    canvas.bind("<MouseWheel>", _on_mousewheel)
+
+    hk_prev = [app.config.get("prev_key", "q")]
+    hk_next = [app.config.get("next_key", "e")]
+    ex_keys = app.config.get("ex_keys", ["1","2","3","4","5","6","7","8","9"]).copy()
+    support_keys = app.config.get("support_keys", ["f1","f2","f3","f4","f5"]).copy()
+    custom_keys = app.config.get("custom_keys", []).copy()
+
+    waiting_btn = [None]
+    hook_handle = [None]
+
+    def _cancel_capture(e=None):
+        if hook_handle[0]:
+            try: keyboard.unhook(hook_handle[0])
+            except: pass
+            hook_handle[0] = None
+        if waiting_btn[0]:
+            btn, orig_text = waiting_btn[0]
+            try: btn.config(text=f"[ {orig_text} ]", bg="#3a3a3a")
+            except tk.TclError: pass
+            waiting_btn[0] = None
+
+    def capture_key(btn, target_list, idx):
+        if waiting_btn[0]: _cancel_capture()
+        orig_text = target_list[idx]
+        btn.config(text=app.t.get("hk_waiting", "Press any key... (Esc: Cancel)"), bg="#884444")
+        waiting_btn[0] = (btn, orig_text)
+
+        def on_key(e):
+            if e.event_type == 'down':
+                hw.after(0, _cancel_capture)
+                if e.name.lower() in ("esc", "escape"): return
+                target_list[idx] = e.name
+                hw.after(0, render_all)
+        
+        try: keyboard.unhook_all()
+        except: pass
+        hook_handle[0] = keyboard.hook(on_key, suppress=True)
+
+    r = [0]
+    def render_all():
+        for widget in sf.winfo_children(): widget.destroy()
+        r[0] = 0
+
+        all_keys = [hk_prev[0], hk_next[0]] + ex_keys + support_keys + custom_keys
+        counts = {}
+        for k in all_keys:
+            kl = k.lower()
+            if kl and kl != "none":
+                counts[kl] = counts.get(kl, 0) + 1
+
+        def add_row(label_text, target_list, idx, show_del=False, del_cb=None):
+            val = target_list[idx]
+            lbl = tk.Label(sf, text=label_text, bg=bg, fg=fg, width=18, anchor="w")
+            lbl.grid(row=r[0], column=0, pady=4, sticky="w")
+            btn = tk.Button(sf, text=f"[ {val} ]", bg="#3a3a3a", fg="white", width=18)
+            btn.config(command=lambda b=btn, tl=target_list, i=idx: capture_key(b, tl, i))
+            
+            def clear_key(event, tl=target_list, i=idx):
+                tl[i] = "none"
+                render_all()
+            btn.bind("<Button-3>", clear_key)
+            
+            btn.grid(row=r[0], column=1, pady=4, sticky="w")
+            col = 2
+            if show_del and del_cb:
+                db = tk.Button(sf, text="-", bg="#f44336", fg="white", command=del_cb, width=3)
+                db.grid(row=r[0], column=col, padx=10); col += 1
+            
+            if val and val.lower() != "none" and counts.get(val.lower(), 0) > 1:
+                warn = tk.Label(sf, text="중복!", bg=bg, fg="#ff4444", font=("Malgun Gothic", 9, "bold"))
+                warn.grid(row=r[0], column=col, padx=5, sticky="w")
+                
+            r[0] += 1
+
+        tk.Label(sf, text="기본 네비게이션", bg=bg, fg="#aaaaaa").grid(row=r[0], column=0, columnspan=3, sticky="w", pady=(10,2)); r[0]+=1
+        add_row(app.t.get("hk_prev", "Prev Line"), hk_prev, 0)
+        add_row(app.t.get("hk_next", "Next Line"), hk_next, 0)
+
+        tk.Label(sf, text="EX 스킬 (1~9)", bg=bg, fg="#aaaaaa").grid(row=r[0], column=0, columnspan=3, sticky="w", pady=(10,2)); r[0]+=1
+        for i in range(len(ex_keys)):
+            add_row(f'{app.t.get("hk_ex", "EX")} {i+1}', ex_keys, i)
+
+        tk.Label(sf, text="지원 스킬 (1~5)", bg=bg, fg="#aaaaaa").grid(row=r[0], column=0, columnspan=3, sticky="w", pady=(10,2)); r[0]+=1
+        for i in range(len(support_keys)):
+            add_row(f'{app.t.get("hk_support", "Support")} {i+1}', support_keys, i)
+
+        tk.Label(sf, text="커스텀 단축키", bg=bg, fg="#aaaaaa").grid(row=r[0], column=0, columnspan=3, sticky="w", pady=(10,2)); r[0]+=1
+        for i in range(len(custom_keys)):
+            def make_del(idx=i):
+                return lambda: (custom_keys.pop(idx), render_all())
+            add_row(f'Custom {i+1}', custom_keys, i, True, make_del())
+
+        def do_add():
+            custom_keys.append("none")
+            render_all()
+
+        tk.Button(sf, text=app.t.get("hk_custom_add", "+ Add Custom"), bg="#4CAF50", fg="white", command=do_add).grid(row=r[0], column=0, columnspan=2, pady=10, sticky="ew")
+
+        _bind_wheel(sf)
+
+    render_all()
+
+    def save():
+        _cancel_capture()
+        app.config["prev_key"] = hk_prev[0]
+        app.config["next_key"] = hk_next[0]
+        app.config["ex_keys"] = ex_keys
+        app.config["support_keys"] = support_keys
+        app.config["custom_keys"] = custom_keys
+        app.save_data()
+        app._register_nav_hotkeys()
+        hw.destroy()
+
+    bf = tk.Frame(hw, bg=bg)
+    hw.protocol("WM_DELETE_WINDOW", save)
+    bf.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
+    tk.Button(bf, text=app.t["s_save"], command=save, bg="#4CAF50", fg="white", width=12).pack(side=tk.LEFT, padx=5, expand=True)
+    tk.Button(bf, text=app.t["s_cancel"], command=lambda: (_cancel_capture(), hw.destroy()), bg="#f44336", fg="white", width=12).pack(side=tk.RIGHT, padx=5, expand=True)
+
+
+def open_custom_skill_window(app, parent=None):
+    cw = tk.Toplevel(parent or app.root)
+    cw.title("커스텀 스킬 관리"); cw.geometry("300x400")
+    cw.configure(bg="#2d2d2d"); cw.attributes('-topmost', True)
+    if parent: cw.grab_set()
+    position_window_relative(parent if parent else app.root, cw)
+    bg, fg = "#2d2d2d", "white"
+
+    if not hasattr(app, "custom_skills"):
+        app.custom_skills = []
+
+    inp = tk.Frame(cw, bg=bg)
+    inp.pack(fill=tk.X, padx=10, pady=(10, 0))
+
+    tk.Label(inp, text="스킬 이름:", bg=bg, fg=fg).pack(side=tk.LEFT)
+    e = tk.Entry(inp, width=15)
+    e.pack(side=tk.LEFT, padx=5)
+    
+    def add_skill():
+        val = e.get().strip()
+        if not val: return
+        if val not in app.custom_skills:
+            app.custom_skills.append(val)
+            app._rebuild_matcher()
+            if app.image_mode: app._render_image_mode()
+            app._save_custom_skills()
+            refresh_list()
+        e.delete(0, tk.END)
+
+    tk.Button(inp, text="추가", command=add_skill, bg="#4CAF50", fg="white").pack(side=tk.LEFT)
+    e.bind("<Return>", lambda ev: add_skill())
+
+    list_container = tk.Frame(cw, bg=bg)
+    list_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    cv = tk.Canvas(list_container, bg=bg, highlightthickness=0)
+    sb = tk.Scrollbar(list_container, orient="vertical", command=cv.yview)
+    cv.configure(yscrollcommand=sb.set)
+    sf = tk.Frame(cv, bg=bg)
+    cv.create_window((0, 0), window=sf, anchor="nw", width=250)
+
+    cv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+    sf.bind("<Configure>", lambda event: cv.configure(scrollregion=cv.bbox("all")))
+
+    def refresh_list():
+        for w in sf.winfo_children(): w.destroy()
+        for i, sk in enumerate(app.custom_skills):
+            row = tk.Frame(sf, bg=bg)
+            row.pack(fill=tk.X, pady=2)
+            tk.Label(row, text=sk, bg=bg, fg=fg, width=15, anchor="w").pack(side=tk.LEFT)
+            def del_skill(idx=i):
+                app.custom_skills.pop(idx)
+                app._rebuild_matcher()
+                if app.image_mode: app._render_image_mode()
+                app._save_custom_skills()
+                refresh_list()
+            tk.Button(row, text="삭제", command=del_skill, bg="#f44336", fg="white").pack(side=tk.RIGHT)
+        cw.update_idletasks()
+        cv.config(scrollregion=cv.bbox("all"))
+
+    refresh_list()
+    tk.Button(cw, text="닫기", command=cw.destroy, bg="#555555", fg="white", width=10).pack(pady=10)

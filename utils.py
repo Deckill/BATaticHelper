@@ -58,7 +58,7 @@ def _find_id_by_name(name, langs_data):
     return None
 
 
-def build_matcher(all_students_by_lang, custom_dict):
+def build_matcher(all_students_by_lang, custom_dict, custom_skills=None):
     if isinstance(all_students_by_lang, list):
         langs_data = {"_compat": all_students_by_lang}
     else:
@@ -71,6 +71,10 @@ def build_matcher(all_students_by_lang, custom_dict):
         return name
 
     entries = []
+
+    if custom_skills:
+        for sk in custom_skills:
+            if sk: entries.append((sk, f"CUSTOM_SKILL:{sk}", -1))
 
     for alias, raw_target in custom_dict.items():
         final_name = resolve_name(raw_target)

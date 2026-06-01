@@ -21,6 +21,7 @@ from data_manager import (
     load_guides_json, save_guides_json,
     load_config_json, save_config_json,
     load_custom_dict_local, save_custom_dict_local,
+    load_custom_skills_local, save_custom_skills_local,
     load_all_students_local, save_all_students_local,
     fetch_students_remote, download_icon
 )
@@ -32,6 +33,7 @@ class AdvancedGuideTeleprompter:
         self.root = root
         self.all_students_data = {}   # {"ko": [...], "en": [...], ...} — 모든 언어 통합
         self.custom_dict       = {}
+        self.custom_skills     = []
         self.matcher           = []
         self.image_mode        = False
 
@@ -47,7 +49,8 @@ class AdvancedGuideTeleprompter:
         self.auto_tracker = AutoTracker(
             should_run_auto_cb=self._should_run_auto,
             set_armed_cb=self._set_armed,
-            on_cast_cb=self._on_cast
+            on_cast_cb=self._on_cast,
+            get_skill_keys_cb=self._get_skill_keys
         )
 
         self.load_data()
@@ -98,11 +101,27 @@ class AdvancedGuideTeleprompter:
         self._refresh_slot_buttons()
 
     def load_data(self):
-        self.config = {"lang":"auto","prev_key":"q","next_key":"e",
-                       "margin_top":2,"hl_color":"#00ff00","fg_color":"#ffffff","bg_color":"#1e1e1e","font_size":14,"opacity":100,"icon_size":36,"icon_pad":4,"debug":False}
+        self.config = {
+            "lang": "auto", "prev_key": "q", "next_key": "e",
+            "ex_keys": ["1","2","3","4","5","6","7","8","9"],
+            "support_keys": ["f1","f2","f3","f4","f5"],
+            "custom_keys": [],
+            "margin_top": 2, "hl_color": "#00ff00", "fg_color": "#ffffff",
+            "bg_color": "#1e1e1e", "font_size": 14, "opacity": 100,
+            "icon_size": 36, "icon_pad": 4, "debug": False
+        }
         cfg = load_config_json()
         if cfg:
             self.config.update(cfg)
+        # Migrate old custom_skills from config to separate file if needed
+        if "custom_skills" in self.config:
+            self.custom_skills = self.config.pop("custom_skills")
+            save_custom_skills_local(self.custom_skills)
+            
+        cs = load_custom_skills_local()
+        if cs is not None:
+            self.custom_skills = cs
+
         # ba_config.json 없으면 기본값 그대로 사용 (초기화 상태)
         
         cd = load_custom_dict_local()
@@ -217,8 +236,11 @@ class AdvancedGuideTeleprompter:
         dbg(f"icon download done: {ok}/{total}")
         self.root.after(0, lambda: self._set_status(self.t.get("loading_done","OK")))
 
+    def _save_custom_skills(self):
+        save_custom_skills_local(self.custom_skills)
+
     def _rebuild_matcher(self):
-        self.matcher = build_matcher(self.all_students_data, self.custom_dict)
+        self.matcher = build_matcher(self.all_students_data, self.custom_dict, self.custom_skills)
 
     def apply_debug(self):
         enabled = bool(self.config.get("debug", False))
@@ -416,8 +438,30 @@ class AdvancedGuideTeleprompter:
         pad = self.config.get("icon_pad", 4)
         bg_c = self.config.get("bg_color","#1e1e1e")
         
+        is_custom_skill = str(sid).startswith("CUSTOM_SKILL:")
+        custom_skill_img_path = None
+        
+        if is_custom_skill:
+            skill_text = sid.split(":", 1)[1]
+            import os
+            from config import get_images_dir
+            imgs_dir = get_images_dir()
+            for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]:
+                p = os.path.join(imgs_dir, skill_text + ext)
+                if os.path.exists(p):
+                    custom_skill_img_path = p
+                    break
+
+        pad = self.config.get("icon_pad", 4)
+        bg_c = self.config.get("bg_color","#1e1e1e")
+        
         ph = tk.Frame(self.text_widget, bg=bg_c, cursor="arrow", padx=pad, pady=pad)
-        lbl = tk.Label(ph, text="[?]", bg=bg_c, fg="#aaaaaa", font=self.custom_font)
+        
+        if is_custom_skill and not custom_skill_img_path:
+            lbl = tk.Label(ph, text=f" {skill_text} ", bg=bg_c, fg="white", font=self.custom_font, relief="solid", borderwidth=1)
+        else:
+            lbl = tk.Label(ph, text="[?]", bg=bg_c, fg="#aaaaaa", font=self.custom_font)
+            
         lbl.pack()
         ph.lbl = lbl
         
@@ -426,10 +470,15 @@ class AdvancedGuideTeleprompter:
             w.bind("<MouseWheel>",       lambda e: tw.event_generate("<MouseWheel>",       delta=e.delta))
             w.bind("<Button-4>",         lambda e: tw.event_generate("<Button-4>"))
             w.bind("<Button-5>",         lambda e: tw.event_generate("<Button-5>"))
+            w.bind("<ButtonRelease-1>",  lambda e, cur_ph=ph: self._on_image_click(cur_ph))
             
         self.text_widget.window_create(tk.END, window=ph)
         self._img_widgets.append(ph)
         
+        if is_custom_skill and not custom_skill_img_path:
+            if suffix: self._insert_token_with_images(suffix)
+            return
+            
         if sid in getattr(self, '_photo_cache', {}):
             self._place_icon(sid, self._photo_cache[sid], ph)
         else:
@@ -438,11 +487,22 @@ class AdvancedGuideTeleprompter:
                 self._pending_icons[sid].append(ph)
             else:
                 self._pending_icons[sid] = [ph]
-                local_path = get_icon_path(sid)
-                if os.path.exists(local_path):
-                    threading.Thread(target=self._load_icon_local, args=(sid, local_path), daemon=True).start()
+                if is_custom_skill:
+                    def _load_custom(p=custom_skill_img_path, s=sid):
+                        try:
+                            from PIL import Image
+                            img = Image.open(p).convert("RGBA").resize(self._icon_size(), Image.LANCZOS)
+                            self.root.after(0, lambda: self._on_icon_loaded(s, img))
+                        except Exception: pass
+                    import threading
+                    threading.Thread(target=_load_custom, daemon=True).start()
                 else:
-                    threading.Thread(target=self._load_icon_remote, args=(sid,), daemon=True).start()
+                    local_path = get_icon_path(sid)
+                    import os, threading
+                    if os.path.exists(local_path):
+                        threading.Thread(target=self._load_icon_local, args=(sid, local_path), daemon=True).start()
+                    else:
+                        threading.Thread(target=self._load_icon_remote, args=(sid,), daemon=True).start()
         if suffix: self._insert_token_with_images(suffix)
 
     def _icon_size(self):
@@ -551,6 +611,13 @@ class AdvancedGuideTeleprompter:
     def _on_cast(self):
         self._img_go_next()
 
+    def _get_skill_keys(self):
+        keys = []
+        keys.extend(self.config.get("ex_keys", []))
+        keys.extend(self.config.get("support_keys", []))
+        keys.extend(self.config.get("custom_keys", []))
+        return [str(k).lower() for k in keys if str(k).strip() and str(k).lower() != "none"]
+
     # ── 단축키 ──────────────────────────────
     def _register_nav_hotkeys(self):
         if self.image_mode:
@@ -625,10 +692,29 @@ class AdvancedGuideTeleprompter:
             tw.yview_moveto(new_top)
         except Exception: pass
 
+    def _on_image_click(self, ph_widget):
+        if not self.image_mode: return
+        try:
+            idx = self._img_widgets.index(ph_widget)
+            self._img_cur = idx
+            self._update_image_highlight()
+        except ValueError: pass
+
     def on_text_click(self, event):
-        if self.image_mode: return
-        self.current_line = int(self.text_widget.index(f"@{event.x},{event.y}").split('.')[0])
-        self.update_highlight()
+        if not self.image_mode:
+            self.current_line = int(self.text_widget.index(f"@{event.x},{event.y}").split('.')[0])
+            self.update_highlight()
+            return
+            
+        try:
+            idx = self.text_widget.index(f"@{event.x},{event.y}")
+            windows = self.text_widget.dump("1.0", idx, window=True)
+            if windows:
+                self._img_cur = len(windows) - 1
+            else:
+                self._img_cur = 0
+            self._update_image_highlight()
+        except Exception: pass
 
     def on_text_edit(self, event):
         if not self.hotkeys_active and not self.image_mode:
@@ -646,11 +732,15 @@ class AdvancedGuideTeleprompter:
 
     def go_first(self):
         if self.image_mode:
-            self._img_idx = 0; self._render_image_mode(); return
+            if self._img_widgets:
+                self._img_cur = 0; self._update_image_highlight()
+            return
         self.current_line = 1; self.update_highlight()
 
     def go_last(self):
         if self.image_mode:
-            self._img_idx = len(self._img_blocks) - 1; self._render_image_mode(); return
+            if self._img_widgets:
+                self._img_cur = len(self._img_widgets) - 1; self._update_image_highlight()
+            return
         limit = self.real_total_lines if self.hotkeys_active else int(self.text_widget.index('end-1c').split('.')[0])
         self.current_line = limit; self.update_highlight()

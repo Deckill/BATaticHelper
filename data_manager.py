@@ -1,7 +1,7 @@
 import json
 import os
 from urllib.request import urlopen, Request
-from config import STUDENTS_URLS, get_students_path, get_custom_dict_path, get_save_path, get_icon_path, get_config_path, ICON_URL_TEMPLATE, MAX_SLOTS
+from config import STUDENTS_URLS, get_students_path, get_custom_dict_path, get_custom_skills_path, get_save_path, get_icon_path, get_config_path, ICON_URL_TEMPLATE, MAX_SLOTS
 from utils import dbg
 
 def load_config_json():
@@ -57,6 +57,25 @@ def save_custom_dict_local(custom_dict):
     try:
         with open(get_custom_dict_path(), "w", encoding="utf-8") as f:
             json.dump(custom_dict, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        dbg(f"save_custom_dict error: {e}")
+
+def load_custom_skills_local():
+    path = get_custom_skills_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                cs = json.load(f)
+            dbg(f"custom_skills: loaded {len(cs)} entries")
+            return cs
+        except Exception as e:
+            dbg(f"load_custom_skills error: {e}")
+    return None
+
+def save_custom_skills_local(custom_skills):
+    try:
+        with open(get_custom_skills_path(), "w", encoding="utf-8") as f:
+            json.dump(custom_skills, f, ensure_ascii=False, indent=2)
     except Exception as e:
         dbg(f"save_custom_dict error: {e}")
 
