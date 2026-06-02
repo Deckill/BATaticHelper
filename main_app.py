@@ -27,6 +27,7 @@ from data_manager import (
 )
 from auto_tracker import AutoTracker
 from ui_windows import open_settings_window, open_custom_dict_window
+import concurrent.futures
 
 class AdvancedGuideTeleprompter:
     def __init__(self, root):
@@ -36,6 +37,7 @@ class AdvancedGuideTeleprompter:
         self.custom_skills     = []
         self.matcher           = []
         self.image_mode        = False
+        self.executor          = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
         self.guide_slots   = [""] * MAX_SLOTS
         self.current_slot  = 0
@@ -58,7 +60,7 @@ class AdvancedGuideTeleprompter:
         self.root.title(self.t["title"])
         self.root.geometry("480x560")
         self.root.configure(bg="#1e1e1e")
-        self.root.attributes('-topmost', True)
+        self.root.attributes('-topmost', self.config.get("always_on_top", True))
         self.root.attributes('-alpha', self.config["opacity"] / 100.0)
 
         self.current_line     = 1
@@ -308,12 +310,42 @@ class AdvancedGuideTeleprompter:
         for b in self._slot_btns: b.destroy()
         self._slot_btns = []
         for i in range(count):
-            b = tk.Button(self.slot_btn_frame, text="", width=3, bg="#333355", fg="white", borderwidth=1, command=lambda i=i: self._on_slot_btn(i))
+            b = tk.Button(self.slot_btn_frame, text="", bg="#333355", fg="white", borderwidth=1, command=lambda i=i: self._on_slot_btn(i))
             b.pack(side=tk.LEFT, padx=1)
+            b.bind("<Double-Button-1>", lambda e, i=i: self._on_slot_btn_double(i))
             self._slot_btns.append(b)
 
+    def _on_slot_btn_double(self, display_index):
+        if self.image_mode: return
+        actual_slot = self._slot_offset + display_index
+        if actual_slot >= MAX_SLOTS: return
+        b = self._slot_btns[display_index]
+        
+        entry = tk.Entry(self.slot_btn_frame, font=("맑은 고딕", 9), bg="#ffffff", fg="#000000", justify="center")
+        entry.place(in_=b, relx=0, rely=0, relwidth=1, relheight=1)
+        current_name = self.config.get("slot_names", {}).get(str(actual_slot), str(actual_slot+1))
+        entry.insert(0, current_name)
+        entry.focus_set()
+        entry.select_range(0, tk.END)
+        
+        def save_name(event=None):
+            new_name = entry.get().strip()
+            if "slot_names" not in self.config: self.config["slot_names"] = {}
+            if new_name: self.config["slot_names"][str(actual_slot)] = new_name
+            else: self.config["slot_names"].pop(str(actual_slot), None)
+            self.save_data()
+            self._refresh_slot_buttons()
+            entry.destroy()
+            
+        def cancel_name(event=None):
+            entry.destroy()
+            
+        entry.bind("<Return>", save_name)
+        entry.bind("<FocusOut>", save_name)
+        entry.bind("<Escape>", cancel_name)
+
     def _on_slot_frame_resize(self, event):
-        btn_w = 32
+        btn_w = 40
         available = max(0, event.width - 4)
         new_count = max(1, min(MAX_SLOTS, available // btn_w))
         if new_count != len(self._slot_btns):
@@ -335,7 +367,12 @@ class AdvancedGuideTeleprompter:
                 if is_active:    bg, fg = "#5577cc", "white"
                 elif has_text:   bg, fg = "#335533", "#aaffaa"
                 else:            bg, fg = "#333355", "#888888"
-                btn.config(text=str(slot_idx+1), bg=bg, fg=fg, state=tk.NORMAL)
+                slot_name = self.config.get("slot_names", {}).get(str(slot_idx), str(slot_idx+1))
+                if len(slot_name) > 10:
+                    slot_name = slot_name[:9] + "…"
+                elif len(slot_name) < 3:
+                    slot_name = slot_name.center(3, " ")
+                btn.config(text=slot_name, bg=bg, fg=fg, state=tk.NORMAL)
             else:
                 btn.config(text="", bg="#2d2d2d", state=tk.DISABLED)
         max_offset = max(0, MAX_SLOTS - n)
@@ -491,18 +528,17 @@ class AdvancedGuideTeleprompter:
                     def _load_custom(p=custom_skill_img_path, s=sid):
                         try:
                             from PIL import Image
-                            img = Image.open(p).convert("RGBA").resize(self._icon_size(), Image.LANCZOS)
+                            img = Image.open(p).convert("RGBA").resize(self._icon_size(), Image.BILINEAR)
                             self.root.after(0, lambda: self._on_icon_loaded(s, img))
                         except Exception: pass
-                    import threading
-                    threading.Thread(target=_load_custom, daemon=True).start()
+                    self.executor.submit(_load_custom)
                 else:
                     local_path = get_icon_path(sid)
-                    import os, threading
+                    import os
                     if os.path.exists(local_path):
-                        threading.Thread(target=self._load_icon_local, args=(sid, local_path), daemon=True).start()
+                        self.executor.submit(self._load_icon_local, sid, local_path)
                     else:
-                        threading.Thread(target=self._load_icon_remote, args=(sid,), daemon=True).start()
+                        self.executor.submit(self._load_icon_remote, sid)
         if suffix: self._insert_token_with_images(suffix)
 
     def _icon_size(self):
@@ -511,16 +547,16 @@ class AdvancedGuideTeleprompter:
 
     def _load_icon_local(self, student_id, path):
         try:
-            img   = Image.open(path).convert("RGBA").resize(self._icon_size(), Image.LANCZOS)
+            img   = Image.open(path).convert("RGBA").resize(self._icon_size(), Image.BILINEAR)
             self.root.after(0, lambda: self._on_icon_loaded(student_id, img))
         except Exception:
-            threading.Thread(target=self._load_icon_remote, args=(student_id,), daemon=True).start()
+            self.executor.submit(self._load_icon_remote, student_id)
 
     def _load_icon_remote(self, student_id):
         try:
             data = download_icon(student_id)
             if data:
-                img   = Image.open(io.BytesIO(data)).convert("RGBA").resize(self._icon_size(), Image.LANCZOS)
+                img   = Image.open(io.BytesIO(data)).convert("RGBA").resize(self._icon_size(), Image.BILINEAR)
                 self.root.after(0, lambda: self._on_icon_loaded(student_id, img))
         except Exception: pass
 

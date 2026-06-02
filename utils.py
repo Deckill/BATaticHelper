@@ -101,7 +101,15 @@ def build_matcher(all_students_by_lang, custom_dict, custom_skills=None):
     result.sort(key=lambda x: (-len(x[0]), x[2]))
     total = sum(len(v) for v in langs_data.values())
     dbg("build_matcher: " + str(len(result)) + " entries from " + str(total) + " students across " + str(len(langs_data)) + " lang(s)")
-    return result
+    
+    if not result:
+        return None, {}
+        
+    pattern_str = "|".join(re.escape(kw) for kw, _, _ in result)
+    compiled_regex = re.compile(f"({pattern_str})", re.IGNORECASE)
+    kw_to_sid = {kw.lower(): sid for kw, sid, _ in result}
+    
+    return compiled_regex, kw_to_sid
 
 
 def search_students_by_name(query, all_students_by_lang, max_results=8):
@@ -125,8 +133,13 @@ def search_students_by_name(query, all_students_by_lang, max_results=8):
 
 
 def match_token(token, matcher):
-    for kw, sid, _ in matcher:
-        idx = token.find(kw)
-        if idx != -1:
+    if not matcher or not matcher[0]: return None
+    regex, kw_to_sid = matcher
+    match = regex.search(token)
+    if match:
+        kw = match.group(1)
+        sid = kw_to_sid.get(kw.lower())
+        if sid:
+            idx = match.start(1)
             return (token[:idx], sid, token[idx+len(kw):])
     return None

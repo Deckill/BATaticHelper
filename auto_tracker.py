@@ -15,7 +15,8 @@ class AutoTracker:
         self._auto_mouse_down = False
         self._auto_lock       = threading.Lock()
         self._kb_hook_handle    = None
-        self._mouse_hook_handle = None
+        self._mouse_down_handle = None
+        self._mouse_up_handle   = None
 
     def start_hooks(self):
         with self._auto_lock:
@@ -24,7 +25,8 @@ class AutoTracker:
             self._auto_mouse_down = False
         dbg("game hooks START")
         self._kb_hook_handle    = keyboard.hook(self._on_kb_hook, suppress=False)
-        self._mouse_hook_handle = mouse.hook(self._on_mouse_hook)
+        self._mouse_down_handle = mouse.on_button(self._on_mouse_down, buttons=(mouse.LEFT,), types=(mouse.DOWN, mouse.DOUBLE))
+        self._mouse_up_handle   = mouse.on_button(self._on_mouse_up, buttons=(mouse.LEFT,), types=(mouse.UP,))
 
     def stop_hooks(self):
         dbg("game hooks STOP")
@@ -32,10 +34,14 @@ class AutoTracker:
             try: keyboard.unhook(self._kb_hook_handle)
             except Exception: pass
             self._kb_hook_handle = None
-        if self._mouse_hook_handle:
-            try: mouse.unhook(self._mouse_hook_handle)
+        if self._mouse_down_handle:
+            try: mouse.unhook(self._mouse_down_handle)
             except Exception: pass
-            self._mouse_hook_handle = None
+            self._mouse_down_handle = None
+        if self._mouse_up_handle:
+            try: mouse.unhook(self._mouse_up_handle)
+            except Exception: pass
+            self._mouse_up_handle = None
         with self._auto_lock:
             self._auto_state = "idle"
         self.set_armed_cb(False)
@@ -99,34 +105,27 @@ class AutoTracker:
         elif state in ("armed", "armed_mouse_down"):
             dbg(f"key_down({name}) → change key (state={state})")
 
-    def _on_mouse_hook(self, event):
-        if not isinstance(event, mouse.ButtonEvent): return
-        if event.button != mouse.LEFT: return
+    def _on_mouse_down(self):
         if not self.should_run_auto_cb(): return
-
-        btn = event.event_type
-        # double-click의 두 번째 down은 "double"로 들어오므로 down으로 통일
-        if btn == "double":
-            btn = "down"
-
         with self._auto_lock:
             state = self._auto_state
-
-        dbg(f"mouse {btn}  state={state}")
-
+        dbg(f"mouse down  state={state}")
         if state == "armed":
-            if btn == "down":
-                with self._auto_lock:
-                    self._auto_state      = "armed_mouse_down"
-                    self._auto_mouse_down = True
-                dbg("→ armed_mouse_down")
+            with self._auto_lock:
+                self._auto_state      = "armed_mouse_down"
+                self._auto_mouse_down = True
+            dbg("→ armed_mouse_down")
 
-        elif state == "armed_mouse_down":
-            if btn == "up":
-                with self._auto_lock:
-                    if not self._auto_mouse_down: return
-                    self._auto_mouse_down = False
-                    self._auto_state      = "idle"
-                    self._auto_key_name   = None
-                dbg("→ CAST")
-                self.on_cast_cb()
+    def _on_mouse_up(self):
+        if not self.should_run_auto_cb(): return
+        with self._auto_lock:
+            state = self._auto_state
+        dbg(f"mouse up  state={state}")
+        if state == "armed_mouse_down":
+            with self._auto_lock:
+                if not self._auto_mouse_down: return
+                self._auto_mouse_down = False
+                self._auto_state      = "idle"
+                self._auto_key_name   = None
+            dbg("→ CAST")
+            self.on_cast_cb()

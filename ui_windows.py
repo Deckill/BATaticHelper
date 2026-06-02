@@ -16,14 +16,24 @@ def position_window_relative(parent, child, offset_x=-30, offset_y=30):
     size = m.group(1) if m else f"{child.winfo_reqwidth()}x{child.winfo_reqheight()}"
     
     child.geometry(f"{size}+{x}+{y}")
+    def force_top():
+        child.attributes('-topmost', False)
+        child.attributes('-topmost', True)
+        child.lift()
+        child.focus_force()
+    child.after(150, force_top)
 
 
 def open_settings_window(app):
     if app.hotkeys_active: app.toggle_hotkeys()
     app.temp_config = app.config.copy()
+    if app.root.attributes('-topmost'):
+        app.root.attributes('-topmost', False)
     sw = tk.Toplevel(app.root)
     sw.title(app.t["s_title"]); sw.geometry("400x600")
     sw.configure(bg="#2d2d2d"); sw.attributes('-topmost', True); sw.grab_set()
+    sw.transient(app.root)
+    sw.focus_force()
     position_window_relative(app.root, sw)
     bg, fg = "#2d2d2d", "white"
     lnm = {"auto": app.t["auto"], "ko": "한국어", "en": "English", "ja": "日本語", "zh": "中文(简体)"}
@@ -32,6 +42,7 @@ def open_settings_window(app):
     _rerender_job = [None]
 
     def upv(*a):
+        if not getattr(sw, '_init_done', False): return
         try:
             app.config["margin_top"] = int(em.get() or app.temp_config["margin_top"])
             app.config["font_size"]  = int(es.get() or app.temp_config["font_size"])
@@ -43,6 +54,7 @@ def open_settings_window(app):
             app.config["bg_color"]   = bgv.get()
             app.config["lang"]       = lcm[lv.get()]
             app.config["debug"]      = bool(dv.get())
+            app.config["always_on_top"] = bool(aot_var.get())
             app.root.attributes('-alpha', app.config["opacity"] / 100.0)
             app.update_language(); app.apply_ui_text(); app.update_highlight()
             app.apply_debug()
@@ -107,6 +119,11 @@ def open_settings_window(app):
                    bg=bg, fg=fg, selectcolor="#1e1e1e", activebackground=bg,
                    activeforeground=fg).grid(row=r, column=0, columnspan=2, pady=3, padx=10, sticky="w"); r += 1
 
+    aot_var = tk.BooleanVar(value=bool(app.config.get("always_on_top", True)))
+    tk.Checkbutton(sw, text="항상 위에 표시 (Always on Top)", variable=aot_var, command=upv,
+                   bg=bg, fg=fg, selectcolor="#1e1e1e", activebackground=bg,
+                   activeforeground=fg).grid(row=r, column=0, columnspan=2, pady=3, padx=10, sticky="w"); r += 1
+
     tk.Label(sw, text=app.t["s_lang"], bg=bg, fg=fg).grid(row=r, column=0, pady=5, padx=10, sticky="e")
     lv = tk.StringVar(value=lnm.get(app.config["lang"], "English"))
     om = tk.OptionMenu(sw, lv, *lnm.values(), command=upv)
@@ -121,11 +138,15 @@ def open_settings_window(app):
               ).grid(row=r, column=0, columnspan=2, pady=(0,8), padx=10, sticky="ew"); r += 1
 
     def save():
-        app.save_data(); sw.destroy()
+        app.save_data()
+        if app.config.get("always_on_top", True):
+            app.root.attributes('-topmost', True)
+        sw.destroy()
 
     def cancel():
         app.config = app.temp_config.copy()
         app.root.attributes('-alpha', app.config["opacity"] / 100.0)
+        app.root.attributes('-topmost', app.config.get("always_on_top", True))
         cv.set(app.config["hl_color"]); bc.config(bg=app.config["hl_color"])
         fgv.set(app.config.get("fg_color", "#ffffff")); bfg.config(bg=app.config.get("fg_color", "#ffffff"))
         bgv.set(app.config.get("bg_color", "#1e1e1e")); bbg.config(bg=app.config.get("bg_color", "#1e1e1e"))
@@ -164,6 +185,8 @@ def open_settings_window(app):
     #                        "Copyright belongs to NEXON Korea Corp. & NEXON GAMES Co., Ltd. & YOSTAR, Inc.",
     #                   bg="#222222", fg="#666666", font=("Malgun Gothic", 7), justify="center", wraplength=380)
     # notice.pack(pady=(0, 6), padx=6)
+    
+    sw._init_done = True
 
 
 def open_license_window(parent=None):
@@ -173,6 +196,8 @@ def open_license_window(parent=None):
     lw.configure(bg="#1e1e1e")
     lw.attributes('-topmost', True)
     if parent: lw.grab_set()
+    lw.transient(parent)
+    lw.focus_force()
 
     bg       = "#1e1e1e"
     fg       = "#cccccc"
@@ -256,6 +281,8 @@ def open_custom_dict_window(app, parent=None):
     cw.title(app.t["cd_title"]); cw.geometry("460x480")
     cw.configure(bg="#2d2d2d"); cw.attributes('-topmost', True)
     if parent: cw.grab_set()
+    cw.transient(parent if parent else app.root)
+    cw.focus_force()
     position_window_relative(parent if parent else app.root, cw)
     bg, fg = "#2d2d2d", "white"
 
@@ -418,6 +445,8 @@ def open_hotkeys_window(app, parent=None):
     hw.configure(bg="#2d2d2d")
     hw.attributes('-topmost', True)
     if parent: hw.grab_set()
+    hw.transient(parent if parent else app.root)
+    hw.focus_force()
     position_window_relative(parent if parent else app.root, hw)
 
     bg, fg = "#2d2d2d", "white"
@@ -570,6 +599,8 @@ def open_custom_skill_window(app, parent=None):
     cw.title("커스텀 스킬 관리"); cw.geometry("300x400")
     cw.configure(bg="#2d2d2d"); cw.attributes('-topmost', True)
     if parent: cw.grab_set()
+    cw.transient(parent if parent else app.root)
+    cw.focus_force()
     position_window_relative(parent if parent else app.root, cw)
     bg, fg = "#2d2d2d", "white"
 
